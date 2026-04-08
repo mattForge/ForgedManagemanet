@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import archiver from 'archiver';
 import { Parser } from 'json2csv';
+import axios from 'axios';
 
 dayjs.extend(utc);
 
@@ -269,6 +270,107 @@ router.get('/timesheets/:userId', requireHRAdmin, async (req, res) => {
     res.status(200).send(csv);
   } catch (error: any) {
     console.error('[HR] Timesheet Generation Error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// POST /api/hr/sync-sage
+router.post('/sync-sage', requireHRAdmin, async (req, res) => {
+  const { month, year } = req.body;
+  const hrUser = (req as any).user;
+
+  if (!month || !year) {
+    res.status(400).json({ error: 'Month and year are required' });
+    return;
+  }
+
+  try {
+    const { startDate, endDate } = calculateDateRange(Number(month), Number(year));
+
+    // 1. Fetch all users in the organization
+    const { data: users, error: usersError } = await supabaseAdmin
+      .from('forge_users')
+      .select('id, full_name, employee_code')
+      .eq('organization_id', hrUser.organization_id);
+
+    if (usersError) throw usersError;
+
+    // 2. Fetch all timesheets for these users in the date range
+    const { data: records, error: attError } = await supabaseAdmin
+      .from('hr_timesheets')
+      .select('user_id, clock_in, clock_out')
+      .eq('organization_id', hrUser.organization_id)
+      .gte('clock_in', startDate.toISOString())
+      .lte('clock_in', endDate.toISOString());
+
+    if (attError) throw attError;
+
+    // 3. Aggregate hours per user
+    const aggregatedData = (users || []).map(user => {
+      const userRecords = (records || []).filter(r => r.user_id === user.id);
+      let totalHours = 0;
+
+      userRecords.forEach(r => {
+        if (r.clock_out) {
+          const start = dayjs(r.clock_in);
+          const end = dayjs(r.clock_out);
+          totalHours += end.diff(start, 'hour', true);
+        }
+      });
+
+      return {
+        employee_identifier: user.employee_code || user.id, // Fallback to ID if no code
+        full_name: user.full_name,
+        total_hours: Number(totalHours.toFixed(2)),
+        pay_period_start: startDate.format('YYYY-MM-DD'),
+        pay_period_end: endDate.format('YYYY-MM-DD')
+      };
+    });
+
+    // 4. Sage API Payload Formatting
+    const sagePayload = {
+      payroll_data: aggregatedData,
+      metadata: {
+        sync_timestamp: new Date().toISOString(),
+        synced_by: hrUser.id,
+        period_month: month,
+        period_year: year
+      }
+    };
+
+    // 5. API Execution
+    console.log('--- SAGE PAYROLL SYNC PAYLOAD ---');
+    console.log(JSON.stringify(sagePayload, null, 2));
+    console.log('---------------------------------');
+
+    if (process.env.SAGE_ENV === 'production') {
+      const SAGE_API_URL = process.env.SAGE_API_URL || 'https://api.sage.com/payroll/sync';
+      const SAGE_API_KEY = process.env.SAGE_API_KEY;
+
+      if (!SAGE_API_KEY) {
+        throw new Error('SAGE_API_KEY is not configured in production');
+      }
+
+      const response = await axios.post(SAGE_API_URL, sagePayload, {
+        headers: {
+          'Authorization': `Bearer ${SAGE_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      res.json({ 
+        message: 'Payroll successfully synced to Sage Production', 
+        sage_response: response.data 
+      });
+    } else {
+      res.json({ 
+        message: 'Payroll sync simulated (Development Mode)', 
+        payload_verified: true,
+        record_count: aggregatedData.length
+      });
+    }
+  } catch (error: any) {
+    console.error('[HR] Sage Sync Error:', error);
     res.status(400).json({ error: error.message });
   }
 });

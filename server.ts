@@ -496,15 +496,12 @@ async function startServer() {
         throw new Error('You are already clocked in.');
       }
 
-      const clockInTime = new Date().toISOString();
-
       const { data: attendance, error: attError } = await supabaseAdmin
         .from('hr_timesheets')
         .insert({
           user_id: authUser.id,
           organization_id: userData.organization_id,
-          is_wfh: is_wfh || false,
-          clock_in: clockInTime
+          is_wfh: is_wfh || false
         })
         .select()
         .single();

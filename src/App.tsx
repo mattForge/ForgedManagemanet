@@ -11,6 +11,7 @@ import PageLoader from './components/ui/PageLoader';
 
 // Lazy load page components
 import Login from './pages/Login';
+import AuthCallback from './pages/AuthCallback';
 const PlatformAdmin = lazy(() => import('./pages/PlatformAdmin'));
 const WorkspaceAdmin = lazy(() => import('./pages/WorkspaceAdmin'));
 import Workspace from './pages/Workspace';
@@ -24,6 +25,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/platform-admin" element={<PlatformAdmin />} />
             <Route path="/workspace-admin" element={<WorkspaceAdmin />} />
             <Route path="/hr-dashboard" element={<HRDashboard />} />

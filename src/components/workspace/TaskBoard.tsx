@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CheckSquare, Plus, X, Save, Clock, GripVertical } from 'lucide-react';
 
@@ -62,7 +62,7 @@ export default function TaskBoard() {
     setLoading(false);
   };
 
-  const handleCreateTask = async (e: React.FormEvent) => {
+  const handleCreateTask = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);

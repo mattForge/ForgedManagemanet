@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../../lib/supabase';
 import { LifeBuoy, ShieldAlert, CheckCircle, Plus, Clock, AlertCircle, ChevronDown, Send } from 'lucide-react';
 
@@ -44,7 +44,7 @@ export default function UserTickets() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setStatus('submitting');
     

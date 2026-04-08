@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { supabase } from '../../lib/supabase';
 import DOMPurify from 'dompurify';
 import { Search, Send, User, Circle, Terminal } from 'lucide-react';
@@ -187,7 +187,7 @@ export default function DirectMessageHub() {
     return channel;
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     const messageText = newMessage.trim();
     if (!messageText || !currentUser || !selectedUser) return;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, X, Laptop, Monitor, Printer, Shield, Network, Sofa, Package } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -68,7 +68,7 @@ export default function ITAssetManager() {
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     try {
       const { data: { session } } = await supabase.auth.getSession();
