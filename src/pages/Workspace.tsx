@@ -1,7 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { LayoutDashboard, CheckSquare, LifeBuoy, LogOut, ShieldAlert, Clock, Power, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, LifeBuoy, LogOut, ShieldAlert, Clock, Power, MessageSquare, Settings } from 'lucide-react';
 import Sidebar from '../components/layout/Sidebar';
 import PageLoader from '../components/ui/PageLoader';
 
@@ -9,9 +9,11 @@ import PageLoader from '../components/ui/PageLoader';
 const Dashboard = lazy(() => import('../components/workspace/Dashboard'));
 const TaskBoard = lazy(() => import('../components/workspace/TaskBoard'));
 const ITSupportDashboard = lazy(() => import('../components/workspace/ITSupportDashboard'));
+const ITAssetManager = lazy(() => import('../components/workspace/ITAssetManager'));
 const UserTickets = lazy(() => import('../components/workspace/UserTickets'));
 const DirectMessageHub = lazy(() => import('../components/workspace/DirectMessageHub'));
 const HRDashboard = lazy(() => import('./hr/HRDashboard'));
+const UserSettings = lazy(() => import('./UserSettings'));
 
 export default function Workspace() {
   const [role, setRole] = useState<string | null>(null);
@@ -83,8 +85,10 @@ export default function Workspace() {
               {activeTab === 'dashboard' && 'Dashboard'}
               {activeTab === 'tasks' && 'Task Board'}
               {activeTab === 'help-desk' && 'Help Desk'}
+              {activeTab === 'assets' && 'Asset Inventory'}
               {activeTab === 'messages' && 'Messages'}
               {activeTab === 'timesheets' && 'HR Admin'}
+              {activeTab === 'settings' && 'Account Settings'}
             </h2>
             <div className="h-4 w-px bg-gray-200"></div>
             <p className="text-sm text-gray-400 font-medium">Enterprise Suite</p>
@@ -107,6 +111,18 @@ export default function Workspace() {
                 <div className={`w-2 h-2 rounded-full ${workStatus === 'Online' ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`}></div>
                 {workStatus}
               </button>
+              <div className="h-8 w-px bg-gray-100 mx-1"></div>
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`p-2 rounded-lg transition-all ${
+                  activeTab === 'settings' 
+                    ? 'bg-blue-50 text-blue-600 shadow-inner' 
+                    : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
+                }`}
+                title="Account Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
             </div>
           </div>
         </header>
@@ -124,8 +140,10 @@ export default function Workspace() {
                   ? <ITSupportDashboard role={role} /> 
                   : <UserTickets />
               )}
+              {activeTab === 'assets' && <ITAssetManager />}
               {activeTab === 'messages' && <DirectMessageHub />}
               {activeTab === 'timesheets' && <HRDashboard />}
+              {activeTab === 'settings' && <UserSettings />}
             </Suspense>
           </div>
         </main>

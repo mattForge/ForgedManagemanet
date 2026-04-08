@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Power, Home, Clock, MapPin } from 'lucide-react';
+import { Power, Home, Clock, MapPin, AlertCircle } from 'lucide-react';
 import dayjs from 'dayjs';
 
 export default function ClockInOutWidget() {
@@ -15,29 +15,33 @@ export default function ClockInOutWidget() {
   }, []);
 
   const fetchStatus = async () => {
+    setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      console.log("--> FETCHING ATTENDANCE STATUS...");
       const response = await fetch('/api/attendance/status', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
         }
       });
 
+      const data = await response.json();
       if (response.ok) {
-        const data = await response.json();
+        console.log("--> STATUS RECEIVED:", data);
         if (data.isClockedIn) {
           setIsOnline(true);
-          setIsWfh(data.isWfh);
           setClockInTime(data.clockInTime);
         } else {
           setIsOnline(false);
           setClockInTime(null);
         }
+      } else {
+        console.error("--> STATUS API ERROR:", data);
       }
-    } catch (err) {
-      console.error('Error fetching status:', err);
+    } catch (err: any) {
+      console.error('WIDGET STATUS FETCH ERROR:', err.message);
     } finally {
       setLoading(false);
     }
@@ -53,6 +57,7 @@ export default function ClockInOutWidget() {
       const endpoint = isOnline ? '/api/attendance/clock-out' : '/api/attendance/clock-in';
       const body = isOnline ? {} : { is_wfh: isWfh };
 
+      console.log(`--> ATTEMPTING ${isOnline ? 'CLOCK-OUT' : 'CLOCK-IN'}...`);
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -62,21 +67,25 @@ export default function ClockInOutWidget() {
         body: JSON.stringify(body)
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Failed to update attendance');
-      }
-
       const data = await response.json();
+
+      if (!response.ok) {
+        console.error("WIDGET API ERROR:", data);
+        throw new Error(data.error || data.message || 'Failed to update attendance');
+      }
       
+      console.log("--> ATTENDANCE UPDATE SUCCESS:", data);
       if (isOnline) {
+        // Clocked out successfully
         setIsOnline(false);
         setClockInTime(null);
       } else {
+        // Clocked in successfully
         setIsOnline(true);
-        setClockInTime(data.attendance.clock_in);
+        setClockInTime(data.clockInTime);
       }
     } catch (err: any) {
+      console.error("WIDGET API EXCEPTION:", err.message);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -98,12 +107,6 @@ export default function ClockInOutWidget() {
         </span>
       </div>
 
-      {error && (
-        <div className="text-xs text-red-600 bg-red-50 p-3 rounded border border-red-100 text-center">
-          {error}
-        </div>
-      )}
-
       {/* Main Action Area */}
       <div className="flex flex-col items-center space-y-4">
         <button
@@ -121,6 +124,13 @@ export default function ClockInOutWidget() {
           <Power className="w-4 h-4" />
           {isOnline ? 'Clock Out' : 'Clock In'}
         </button>
+
+        {error && (
+          <div className="w-full text-xs text-red-600 bg-red-50 p-3 rounded border border-red-100 text-center flex items-center justify-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {isOnline && clockInTime && (
           <div className="flex flex-col items-center gap-1">

@@ -79,39 +79,60 @@ const generateLedgerCSV = (startDate: dayjs.Dayjs, endDate: dayjs.Dayjs, records
   const ledger = [];
   let current = startDate.clone();
   
-  // Create a map of records by date for fast lookup
-  const recordsByDate: Record<string, any> = {};
+  // Group records by date
+  const recordsByDate: Record<string, any[]> = {};
   records.forEach(r => {
     const dateKey = dayjs(r.clock_in).format('YYYY-MM-DD');
-    recordsByDate[dateKey] = r;
+    if (!recordsByDate[dateKey]) {
+      recordsByDate[dateKey] = [];
+    }
+    recordsByDate[dateKey].push(r);
   });
 
   while (current.isBefore(endDate) || current.isSame(endDate, 'day')) {
     const dateKey = current.format('YYYY-MM-DD');
-    const record = recordsByDate[dateKey];
+    const dayRecords = recordsByDate[dateKey] || [];
     
     let clockInStr = '-';
     let clockOutStr = '-';
-    let hoursWorked = '0.00';
+    let totalHours = 0;
     let status = 'No Record';
     let location = '-';
 
-    if (record) {
-      const clockIn = dayjs(record.clock_in);
-      const clockOut = record.clock_out ? dayjs(record.clock_out) : null;
+    if (dayRecords.length > 0) {
+      // Sort records by clock_in
+      const sorted = [...dayRecords].sort((a, b) => dayjs(a.clock_in).diff(dayjs(b.clock_in)));
       
-      clockInStr = clockIn.format('hh:mm A');
-      location = record.is_wfh ? 'WFH' : 'Office';
+      const firstPunch = sorted[0];
+      const lastPunch = sorted[sorted.length - 1];
+      
+      clockInStr = dayjs(firstPunch.clock_in).format('hh:mm A');
+      location = firstPunch.is_wfh ? 'WFH' : 'Office';
 
-      if (clockOut) {
-        clockOutStr = clockOut.format('hh:mm A');
-        const diffMs = clockOut.diff(clockIn);
-        const hours = diffMs / (1000 * 60 * 60);
-        hoursWorked = hours.toFixed(2);
+      if (lastPunch.clock_out) {
+        // All records closed (or at least the last one is, which we treat as the day's end)
+        clockOutStr = dayjs(lastPunch.clock_out).format('hh:mm A');
         status = 'Complete';
+        
+        // Calculate total decimal hours for all records in the day
+        sorted.forEach(r => {
+          if (r.clock_out) {
+            const start = dayjs(r.clock_in);
+            const end = dayjs(r.clock_out);
+            totalHours += end.diff(start, 'hour', true);
+          }
+        });
       } else {
-        clockOutStr = 'Active Shift';
-        status = 'Incomplete';
+        // Last punch is null (Active or Incomplete)
+        clockOutStr = '-';
+        totalHours = 0; // Per directive: Set "Hours Worked" to "0.00"
+        
+        const hoursOpen = (new Date().getTime() - new Date(lastPunch.clock_in).getTime()) / (1000 * 60 * 60);
+        if (hoursOpen > 12) {
+          status = 'Incomplete';
+        } else {
+          status = 'Active Shift';
+        }
       }
     }
 
@@ -120,7 +141,7 @@ const generateLedgerCSV = (startDate: dayjs.Dayjs, endDate: dayjs.Dayjs, records
       'Day': current.format('dddd'),
       'Clock In': clockInStr,
       'Clock Out': clockOutStr,
-      'Hours Worked': hoursWorked,
+      'Hours Worked': totalHours.toFixed(2),
       'Status': status,
       'Location': location
     });
@@ -163,7 +184,7 @@ router.get('/timesheets/bulk', requireHRAdmin, async (req, res) => {
     let addedFiles = 0;
     for (const user of users || []) {
       const { data: records, error: attError } = await supabaseAdmin
-        .from('attendance')
+        .from('hr_timesheets')
         .select('*')
         .eq('user_id', user.id)
         .gte('clock_in', startDate.toISOString())
@@ -171,7 +192,7 @@ router.get('/timesheets/bulk', requireHRAdmin, async (req, res) => {
         .order('clock_in', { ascending: true });
 
       if (attError) {
-        console.error(`[HR] Bulk Attendance Fetch Error for user ${user.id}:`, attError);
+        console.error(`[HR] Bulk Timesheet Fetch Error for user ${user.id}:`, attError);
         continue;
       }
 
@@ -225,7 +246,7 @@ router.get('/timesheets/:userId', requireHRAdmin, async (req, res) => {
     }
 
     const { data: records, error: attError } = await supabaseAdmin
-      .from('attendance')
+      .from('hr_timesheets')
       .select('*')
       .eq('user_id', userId)
       .gte('clock_in', startDate.toISOString())
@@ -233,8 +254,8 @@ router.get('/timesheets/:userId', requireHRAdmin, async (req, res) => {
       .order('clock_in', { ascending: true });
 
     if (attError) {
-      console.error('[HR] Attendance Fetch Error:', attError);
-      throw new Error(`Failed to fetch attendance: ${attError.message}`);
+      console.error('[HR] Timesheet Fetch Error:', attError);
+      throw new Error(`Failed to fetch timesheets: ${attError.message}`);
     }
 
     console.log(`[HR] DB Records found for user ${userId}:`, records?.length || 0);

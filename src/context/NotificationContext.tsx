@@ -4,14 +4,14 @@ import { supabase } from '../lib/supabase';
 interface Toast {
   id: string;
   message: string;
-  type: 'message' | 'ticket' | 'error';
+  type: 'message' | 'ticket' | 'error' | 'success';
 }
 
 interface NotificationContextType {
   unreadDMs: number;
   unreadTickets: number;
   activeToasts: Toast[];
-  addToast: (message: string, type: 'message' | 'ticket' | 'error') => void;
+  addToast: (message: string, type: 'message' | 'ticket' | 'error' | 'success') => void;
   removeToast: (id: string) => void;
   clearUnreadDMs: () => void;
   clearUnreadTickets: () => void;
@@ -98,7 +98,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
-  const addToast = (message: string, type: 'message' | 'ticket' | 'error') => {
+  const addToast = (message: string, type: 'message' | 'ticket' | 'error' | 'success') => {
     const id = Math.random().toString(36).substring(2, 9);
     setActiveToasts((prev) => [...prev, { id, message, type }]);
     

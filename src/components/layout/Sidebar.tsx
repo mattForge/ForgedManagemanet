@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, LifeBuoy, LogOut, ShieldAlert, MessageSquare, ArrowLeft, Users, Activity, FileSpreadsheet } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, LifeBuoy, LogOut, ShieldAlert, MessageSquare, ArrowLeft, Users, Activity, FileSpreadsheet, Package, Settings } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
 import { supabase } from '../../lib/supabase';
 
@@ -28,7 +28,7 @@ export default function Sidebar({ role, activeTab, setActiveTab, isAdminView }: 
     navigate('/login');
   };
 
-  const isAdminRole = ['Super_User', 'Admin', 'HR', 'Executive'].includes(role);
+  const isAdminRole = ['Super_User', 'Admin', 'Executive'].includes(role);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -37,14 +37,20 @@ export default function Sidebar({ role, activeTab, setActiveTab, isAdminView }: 
     { id: 'messages', label: 'Messages', icon: MessageSquare, badge: unreadDMs > 0 ? unreadDMs : null },
   ];
 
+  if (['IT_Tech', 'Admin', 'Executive'].includes(role)) {
+    navItems.push({ id: 'assets', label: 'Asset Inventory', icon: Package });
+  }
+
   if (['HR', 'Super_User'].includes(role)) {
     navItems.push({ id: 'timesheets', label: 'HR Admin', icon: FileSpreadsheet });
   }
 
+  navItems.push({ id: 'settings', label: 'Settings', icon: Settings });
+
   const adminNavItems = [
     { id: 'teams', label: 'Team Management', icon: Users, roles: ['Admin'] },
     { id: 'metrics', label: 'Performance Metrics', icon: Activity, roles: ['Executive'] },
-    { id: 'timesheets', label: 'Timesheet Export', icon: FileSpreadsheet, roles: ['HR', 'Super_User'] },
+    { id: 'timesheets', label: 'Timesheet Export', icon: FileSpreadsheet, roles: ['Super_User'] },
   ];
 
   const currentNavItems = isAdminView 

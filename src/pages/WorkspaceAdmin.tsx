@@ -27,10 +27,13 @@ export default function WorkspaceAdmin() {
         .single();
 
       if (data) {
+        if (data.role === 'HR') {
+          navigate('/workspace');
+          return;
+        }
         setRole(data.role);
         if (data.role === 'Admin') setActiveTab('teams');
         else if (data.role === 'Executive') setActiveTab('metrics');
-        else if (data.role === 'HR') setActiveTab('timesheets');
       }
     };
     fetchRole();

@@ -31,36 +31,61 @@ export default function HRDashboard() {
   const [exporting, setExporting] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchUsers();
+    let channel: any;
+
+    const init = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: userData } = await supabase
+          .from('forge_users')
+          .select('organization_id')
+          .eq('id', user.id)
+          .single();
+
+        if (!userData?.organization_id) return;
+
+        // Initial fetch
+        const { data: orgUsers, error } = await supabase
+          .from('forge_users')
+          .select('*')
+          .eq('organization_id', userData.organization_id)
+          .order('full_name');
+
+        if (error) throw error;
+        setUsers(orgUsers || []);
+
+        // Realtime subscription for status updates
+        channel = supabase
+          .channel('hr-status-updates')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'forge_users',
+              filter: `organization_id=eq.${userData.organization_id}`
+            },
+            (payload) => {
+              const updatedUser = payload.new as ForgeUser;
+              setUsers(prev => prev.map(u => u.id === updatedUser.id ? { ...u, work_status: updatedUser.work_status } : u));
+            }
+          )
+          .subscribe();
+      } catch (error) {
+        console.error('Error initializing HR Dashboard:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    init();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
-
-  const fetchUsers = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: userData } = await supabase
-        .from('forge_users')
-        .select('organization_id')
-        .eq('id', user.id)
-        .single();
-
-      if (!userData) return;
-
-      const { data: orgUsers, error } = await supabase
-        .from('forge_users')
-        .select('*')
-        .eq('organization_id', userData.organization_id)
-        .order('full_name');
-
-      if (error) throw error;
-      setUsers(orgUsers || []);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDownload = async (userId: string, userName: string) => {
     setExporting(userId);
@@ -266,7 +291,7 @@ export default function HRDashboard() {
                 <tr className="bg-slate-50 border-y border-slate-100">
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Shift Status</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                 </tr>
               </thead>
@@ -304,10 +329,11 @@ export default function HRDashboard() {
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{user.role}</td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
                           user.work_status === 'Online' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
                         }`}>
-                          {user.work_status}
+                          <div className={`w-1.5 h-1.5 rounded-full ${user.work_status === 'Online' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                          {user.work_status === 'Online' ? 'Clocked In' : 'Clocked Out'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">

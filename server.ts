@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'path';
-import hrRoutes from './server/src/routes/hrRoutes.js';
+import hrRoutes from './server/src/routes/hrRoutes.ts';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://hfaouzlfcmjbfxuuktim.supabase.co";
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmYW91emxmY21qYmZ4dXVrdGltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MDc4NjcsImV4cCI6MjA4OTQ4Mzg2N30.AeJRTIfYYVqTzxx-6Mkp2UXlzDirghXZ9eKCXrxgrXY";
@@ -268,93 +268,269 @@ async function startServer() {
       
       const { data: userData } = await supabaseAdmin
         .from('forge_users')
-        .select('organization_id')
+        .select('organization_id, role')
         .eq('id', user.id)
         .single();
         
-      (req as any).user = { ...user, organization_id: userData?.organization_id };
+      (req as any).user = { ...user, organization_id: userData?.organization_id, role: userData?.role };
       next();
     } catch (err) {
       res.status(500).json({ error: 'Internal Server Error' });
     }
   };
 
+  const requireITAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    await requireAuth(req, res, () => {
+      const user = (req as any).user;
+      if (!['IT_Tech', 'Executive', 'Admin'].includes(user.role)) {
+        res.status(403).json({ error: 'Forbidden: Requires IT Tech, Executive, or Admin role' });
+        return;
+      }
+      next();
+    });
+  };
+
+  // --- IT ASSET API ROUTES ---
+  app.get('/api/assets', requireITAdmin, async (req, res) => {
+    const user = (req as any).user;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('it_assets')
+        .select('*')
+        .eq('organization_id', user.organization_id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      res.json(data);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // --- NETWORK DISCOVERY API ---
+  app.post('/api/network/ingest', async (req, res) => {
+    const apiKey = req.headers['x-api-key'];
+    const PROBE_KEY = process.env.FORGE_PROBE_API_KEY || 'forge_discovery_secret_2026';
+
+    if (apiKey !== PROBE_KEY) {
+      console.warn("--> UNAUTHORIZED PROBE ATTEMPT");
+      return res.status(401).json({ error: 'Unauthorized: Invalid Probe API Key' });
+    }
+
+    const { devices, organization_id } = req.body;
+    if (!devices || !Array.isArray(devices) || !organization_id) {
+      return res.status(400).json({ error: 'Invalid payload: devices array and organization_id required' });
+    }
+
+    console.log(`--> RECEIVED NETWORK SCAN FROM ORG: ${organization_id} (${devices.length} devices)`);
+
+    try {
+      for (const device of devices) {
+        const { ip, mac, hostname, vendor } = device;
+        if (!mac) continue;
+
+        // 1. Check if it matches an existing IT Asset
+        const { data: existingAsset } = await supabaseAdmin
+          .from('it_assets')
+          .select('id')
+          .eq('mac_address', mac)
+          .eq('organization_id', organization_id)
+          .maybeSingle();
+
+        if (existingAsset) {
+          // Update last seen and IP on managed asset
+          await supabaseAdmin
+            .from('it_assets')
+            .update({ 
+              last_seen: new Date().toISOString(),
+              ip_address: ip,
+              hostname: hostname || undefined
+            })
+            .eq('id', existingAsset.id);
+        }
+
+        // 2. Upsert into network_devices table for discovery tracking
+        const { error: upsertError } = await supabaseAdmin
+          .from('network_devices')
+          .upsert({
+            mac_address: mac,
+            organization_id,
+            ip_address: ip,
+            hostname: hostname || 'Unknown',
+            vendor: vendor || 'Unknown',
+            last_seen: new Date().toISOString(),
+            status: existingAsset ? 'Managed' : 'Unmanaged'
+          }, { onConflict: 'mac_address, organization_id' });
+
+        if (upsertError) console.error("!!! NETWORK UPSERT ERROR !!!", upsertError);
+      }
+
+      res.json({ message: 'Ingest complete', count: devices.length });
+    } catch (error: any) {
+      console.error("!!! NETWORK INGEST EXCEPTION !!!", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/assets', requireITAdmin, async (req, res) => {
+    const user = (req as any).user;
+    const assetData = req.body;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('it_assets')
+        .insert([{ ...assetData, organization_id: user.organization_id }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/assets/:id', requireITAdmin, async (req, res) => {
+    const { id } = req.params;
+    const assetData = req.body;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('it_assets')
+        .update(assetData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/assets/:id', requireITAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { error } = await supabaseAdmin
+        .from('it_assets')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      res.json({ message: 'Asset deleted successfully' });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   app.get('/api/attendance/status', requireAuth, async (req, res) => {
     const user = (req as any).user;
+    console.log("--> STATUS CHECK BY USER:", user.id);
 
     try {
       const { data: activeRecord, error } = await supabaseAdmin
-        .from('attendance')
-        .select('id, clock_in, is_wfh')
+        .from('hr_timesheets')
+        .select('clock_in')
         .eq('user_id', user.id)
         .is('clock_out', null)
         .order('clock_in', { ascending: false })
         .limit(1)
         .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error && error.code !== 'PGRST116') {
+        console.error("!!! STATUS FETCH ERROR !!!", error);
+        throw error;
+      }
 
       if (activeRecord) {
+        console.log("--> ACTIVE SHIFT FOUND:", activeRecord.clock_in);
         res.json({
           isClockedIn: true,
-          recordId: activeRecord.id,
-          clockInTime: activeRecord.clock_in,
-          isWfh: activeRecord.is_wfh
+          clockInTime: activeRecord.clock_in
         });
       } else {
-        res.json({ isClockedIn: false });
+        console.log("--> NO ACTIVE SHIFT FOUND");
+        res.json({ isClockedIn: false, clockInTime: null });
       }
     } catch (error: any) {
-      res.status(400).json({ error: error.message });
+      console.error("!!! STATUS ROUTE EXCEPTION !!!", error);
+      res.status(500).json({ error: error.message });
     }
   });
 
   app.post('/api/attendance/clock-in', requireAuth, async (req, res) => {
     const { is_wfh } = req.body;
-    const user = (req as any).user;
+    const authUser = (req as any).user;
+    console.log("--> CLOCK IN ATTEMPT BY USER:", authUser.id);
 
     try {
-      if (!user.organization_id) {
-         res.status(400).json({ error: 'User does not belong to an organization' });
-         return;
+      // CRITICAL: Query forge_users to get organization_id
+      const { data: userData, error: userError } = await supabaseAdmin
+        .from('forge_users')
+        .select('organization_id')
+        .eq('id', authUser.id)
+        .single();
+
+      if (userError || !userData?.organization_id) {
+        console.error("!!! ORG ID FETCH ERROR !!!", userError || "No org ID found");
+        throw new Error('User organization profile not found. Please contact admin.');
       }
+
+      console.log("--> ORG ID FOUND:", userData.organization_id);
 
       // Check for existing open record
       const { data: existing, error: checkError } = await supabaseAdmin
-        .from('attendance')
+        .from('hr_timesheets')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', authUser.id)
         .is('clock_out', null)
         .limit(1);
 
-      if (checkError) throw checkError;
+      if (checkError) {
+        console.error("!!! DUPLICATE CHECK ERROR !!!", checkError);
+        throw checkError;
+      }
+      
       if (existing && existing.length > 0) {
-        res.status(400).json({ error: 'User is already clocked in' });
-        return;
+        console.warn("--> USER ALREADY CLOCKED IN");
+        throw new Error('You are already clocked in.');
       }
 
+      const clockInTime = new Date().toISOString();
+
       const { data: attendance, error: attError } = await supabaseAdmin
-        .from('attendance')
+        .from('hr_timesheets')
         .insert({
-          user_id: user.id,
-          organization_id: user.organization_id,
+          user_id: authUser.id,
+          organization_id: userData.organization_id,
           is_wfh: is_wfh || false,
-          clock_in: new Date().toISOString()
+          clock_in: clockInTime
         })
         .select()
         .single();
 
-      if (attError) throw attError;
+      if (attError) {
+        console.error("!!! SUPABASE INSERT ERROR !!!", attError);
+        throw attError;
+      }
 
-      const { error: userError } = await supabaseAdmin
+      console.log("--> INSERT SUCCESSFUL:", attendance.id);
+
+      const { error: userUpdateError } = await supabaseAdmin
         .from('forge_users')
         .update({ work_status: 'Online' })
-        .eq('id', user.id);
+        .eq('id', authUser.id);
 
-      if (userError) throw userError;
+      if (userUpdateError) {
+        console.error("!!! USER STATUS UPDATE ERROR !!!", userUpdateError);
+        throw userUpdateError;
+      }
 
-      res.json({ message: 'Clocked in successfully', attendance });
+      res.json({ 
+        message: 'Clocked in successfully', 
+        clockInTime: attendance.clock_in 
+      });
     } catch (error: any) {
+      console.error("!!! CLOCK-IN ROUTE EXCEPTION !!!", error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -475,6 +651,26 @@ async function startServer() {
     }
   });
 
+  app.get('/api/org/it-techs', requireAuth, async (req, res) => {
+    const user = (req as any).user;
+    try {
+      if (!user.organization_id) {
+        return res.status(400).json({ error: 'User does not belong to an organization' });
+      }
+
+      const { data: techs, error } = await supabaseAdmin
+        .from('forge_users')
+        .select('id, full_name')
+        .eq('organization_id', user.organization_id)
+        .in('role', ['IT_Tech', 'Admin', 'Super_User']);
+
+      if (error) throw error;
+      res.json({ techs });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   app.get('/api/directory/search', requireAuth, async (req, res) => {
     const user = (req as any).user;
     const { q } = req.query;
@@ -554,7 +750,7 @@ async function startServer() {
 
     try {
       const { data: activeRecord, error: findError } = await supabaseAdmin
-        .from('attendance')
+        .from('hr_timesheets')
         .select('id')
         .eq('user_id', user.id)
         .is('clock_out', null)
@@ -571,7 +767,7 @@ async function startServer() {
       }
 
       const { error: attError } = await supabaseAdmin
-        .from('attendance')
+        .from('hr_timesheets')
         .update({ clock_out: new Date().toISOString() })
         .eq('id', activeRecord.id);
 

@@ -4,7 +4,8 @@ const connectionString = 'postgresql://postgres:Blu3L@g00n0101@db.hfaouzlfcmjbfx
 
 const schema = `
 -- Drop existing tables if they exist
-DROP TABLE IF EXISTS attendance CASCADE;
+DROP TABLE IF EXISTS it_assets CASCADE;
+DROP TABLE IF EXISTS hr_timesheets CASCADE;
 DROP TABLE IF EXISTS forge_tickets CASCADE;
 DROP TABLE IF EXISTS help_desk_tickets CASCADE;
 DROP TABLE IF EXISTS forge_tasks CASCADE;
@@ -39,8 +40,22 @@ CREATE TABLE forge_users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Create Attendance Table
-CREATE TABLE attendance (
+-- Create IT Assets Table
+CREATE TABLE it_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_name TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('Staff Laptops', 'Student Laptops', 'Tech/Printers', 'Monitors/TVs', 'Security', 'Networking', 'Furniture')),
+  serial_number TEXT NOT NULL,
+  assigned_to TEXT,
+  status TEXT NOT NULL CHECK (status IN ('Active', 'In Storage', 'Decommissioned')),
+  purchase_price NUMERIC DEFAULT 0,
+  notes TEXT,
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Create HR Timesheets Table
+CREATE TABLE hr_timesheets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES forge_users(id) ON DELETE CASCADE NOT NULL,
   organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE NOT NULL,
@@ -80,7 +95,8 @@ CREATE TABLE help_desk_tickets (
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE forge_users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE it_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hr_timesheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE forge_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE help_desk_tickets ENABLE ROW LEVEL SECURITY;
 
@@ -88,7 +104,8 @@ ALTER TABLE help_desk_tickets ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all access to authenticated users" ON organizations FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all access to authenticated users" ON teams FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all access to authenticated users" ON forge_users FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow all access to authenticated users" ON attendance FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all access to authenticated users" ON it_assets FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all access to authenticated users" ON hr_timesheets FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all access to authenticated users" ON forge_tasks FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all access to authenticated users" ON help_desk_tickets FOR ALL USING (auth.role() = 'authenticated');
 `;
