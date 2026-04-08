@@ -45,6 +45,10 @@ export default function Sidebar({ role, activeTab, setActiveTab, isAdminView }: 
     navItems.push({ id: 'timesheets', label: 'HR Admin', icon: FileSpreadsheet });
   }
 
+  if (['Executive', 'Admin', 'Super_User'].includes(role)) {
+    navItems.push({ id: 'analytics', label: 'Executive Analytics', icon: Activity });
+  }
+
   navItems.push({ id: 'settings', label: 'Settings', icon: Settings });
 
   const adminNavItems = [

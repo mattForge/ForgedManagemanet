@@ -10,10 +10,10 @@ import SteelToast from './components/ui/SteelToast';
 import PageLoader from './components/ui/PageLoader';
 
 // Lazy load page components
-const Login = lazy(() => import('./pages/Login'));
+import Login from './pages/Login';
 const PlatformAdmin = lazy(() => import('./pages/PlatformAdmin'));
 const WorkspaceAdmin = lazy(() => import('./pages/WorkspaceAdmin'));
-const Workspace = lazy(() => import('./pages/Workspace'));
+import Workspace from './pages/Workspace';
 const HRDashboard = lazy(() => import('./pages/hr/HRDashboard'));
 
 export default function App() {

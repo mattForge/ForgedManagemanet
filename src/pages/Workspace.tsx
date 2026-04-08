@@ -1,19 +1,18 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { LayoutDashboard, CheckSquare, LifeBuoy, LogOut, ShieldAlert, Clock, Power, MessageSquare, Settings } from 'lucide-react';
 import Sidebar from '../components/layout/Sidebar';
 import PageLoader from '../components/ui/PageLoader';
-
-// Lazy load workspace components
-const Dashboard = lazy(() => import('../components/workspace/Dashboard'));
-const TaskBoard = lazy(() => import('../components/workspace/TaskBoard'));
-const ITSupportDashboard = lazy(() => import('../components/workspace/ITSupportDashboard'));
-const ITAssetManager = lazy(() => import('../components/workspace/ITAssetManager'));
-const UserTickets = lazy(() => import('../components/workspace/UserTickets'));
-const DirectMessageHub = lazy(() => import('../components/workspace/DirectMessageHub'));
-const HRDashboard = lazy(() => import('./hr/HRDashboard'));
-const UserSettings = lazy(() => import('./UserSettings'));
+import Dashboard from '../components/workspace/Dashboard';
+import TaskBoard from '../components/workspace/TaskBoard';
+import ITSupportDashboard from '../components/workspace/ITSupportDashboard';
+import ITAssetManager from '../components/workspace/ITAssetManager';
+import UserTickets from '../components/workspace/UserTickets';
+import DirectMessageHub from '../components/workspace/DirectMessageHub';
+import HRDashboard from './hr/HRDashboard';
+import UserSettings from './UserSettings';
+import ExecutiveDashboard from './ExecutiveDashboard';
 
 export default function Workspace() {
   const [role, setRole] = useState<string | null>(null);
@@ -89,6 +88,7 @@ export default function Workspace() {
               {activeTab === 'messages' && 'Messages'}
               {activeTab === 'timesheets' && 'HR Admin'}
               {activeTab === 'settings' && 'Account Settings'}
+              {activeTab === 'analytics' && 'Executive Analytics'}
             </h2>
             <div className="h-4 w-px bg-gray-200"></div>
             <p className="text-sm text-gray-400 font-medium">Enterprise Suite</p>
@@ -128,23 +128,18 @@ export default function Workspace() {
         </header>
         <main className="flex-1 overflow-auto p-8 custom-scrollbar bg-slate-50/50">
           <div className="max-w-7xl mx-auto">
-            <Suspense fallback={
-              <div className="flex items-center justify-center h-64">
-                <div className="w-8 h-8 border-3 border-slate-200 border-t-blue-600 rounded-full animate-spin shadow-sm"></div>
-              </div>
-            }>
-              {activeTab === 'dashboard' && <Dashboard />}
-              {activeTab === 'tasks' && <TaskBoard />}
-              {activeTab === 'help-desk' && (
-                ['IT_Tech', 'Admin', 'Super_User'].includes(role) 
-                  ? <ITSupportDashboard role={role} /> 
-                  : <UserTickets />
-              )}
-              {activeTab === 'assets' && <ITAssetManager />}
-              {activeTab === 'messages' && <DirectMessageHub />}
-              {activeTab === 'timesheets' && <HRDashboard />}
-              {activeTab === 'settings' && <UserSettings />}
-            </Suspense>
+            {activeTab === 'dashboard' && <Dashboard />}
+            {activeTab === 'tasks' && <TaskBoard />}
+            {activeTab === 'help-desk' && (
+              ['IT_Tech', 'Admin', 'Super_User'].includes(role) 
+                ? <ITSupportDashboard role={role} /> 
+                : <UserTickets />
+            )}
+            {activeTab === 'assets' && <ITAssetManager />}
+            {activeTab === 'messages' && <DirectMessageHub />}
+            {activeTab === 'timesheets' && <HRDashboard />}
+            {activeTab === 'settings' && <UserSettings />}
+            {activeTab === 'analytics' && <ExecutiveDashboard />}
           </div>
         </main>
       </div>

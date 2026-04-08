@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'path';
+import dayjs from 'dayjs';
 import hrRoutes from './server/src/routes/hrRoutes.ts';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://hfaouzlfcmjbfxuuktim.supabase.co";
@@ -536,6 +537,147 @@ async function startServer() {
   });
 
   // --- TICKETS API ROUTES ---
+  const requireExecAccess = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    await requireAuth(req, res, () => {
+      const user = (req as any).user;
+      if (!['Executive', 'Admin', 'Super_User'].includes(user.role)) {
+        res.status(403).json({ error: 'Forbidden: Requires Executive, Admin, or Super_User role' });
+        return;
+      }
+      next();
+    });
+  };
+
+  // --- EXECUTIVE ANALYTICS API ---
+  app.get('/api/exec/analytics', requireExecAccess, async (req, res) => {
+    const user = (req as any).user;
+    const orgId = user.organization_id;
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    try {
+      // 1. Fetch all required data in parallel
+      const [
+        { data: users },
+        { data: teams },
+        { data: timesheets },
+        { data: tasks },
+        { data: tickets }
+      ] = await Promise.all([
+        supabaseAdmin.from('forge_users').select('id, full_name, team_id, role').eq('organization_id', orgId),
+        supabaseAdmin.from('teams').select('id, name').eq('organization_id', orgId),
+        supabaseAdmin.from('hr_timesheets').select('*').eq('organization_id', orgId).gte('clock_in', thirtyDaysAgo.toISOString()),
+        supabaseAdmin.from('forge_tasks').select('*').eq('organization_id', orgId).gte('created_at', thirtyDaysAgo.toISOString()),
+        supabaseAdmin.from('help_desk_tickets').select('*').eq('organization_id', orgId).gte('created_at', thirtyDaysAgo.toISOString())
+      ]);
+
+      if (!users || !teams) throw new Error('Failed to fetch base data');
+
+      // 2. Process Organizational Stats
+      const totalHours = timesheets?.reduce((acc, ts) => {
+        if (ts.clock_out) {
+          const start = new Date(ts.clock_in).getTime();
+          const end = new Date(ts.clock_out).getTime();
+          return acc + (end - start) / (1000 * 60 * 60);
+        }
+        return acc;
+      }, 0) || 0;
+
+      const completedTasks = tasks?.filter(t => t.status === 'Done').length || 0;
+      const resolvedTickets = tickets?.filter(t => t.status === 'Resolved').length || 0;
+      const activeUsers = users.length;
+
+      const orgStats = {
+        totalHours: Math.round(totalHours),
+        completedTasks,
+        resolvedTickets,
+        activeUsers,
+        productivityTrend: 12 // Mock trend for now
+      };
+
+      // 3. Process Team Stats
+      const teamStats = teams.map(team => {
+        const teamUsers = users.filter(u => u.team_id === team.id);
+        const teamUserIds = teamUsers.map(u => u.id);
+        
+        const teamTimesheets = timesheets?.filter(ts => teamUserIds.includes(ts.user_id)) || [];
+        const teamTasks = tasks?.filter(t => teamUserIds.includes(t.assigned_to || '')) || [];
+        
+        const teamHours = teamTimesheets.reduce((acc, ts) => {
+          if (ts.clock_out) {
+            const start = new Date(ts.clock_in).getTime();
+            const end = new Date(ts.clock_out).getTime();
+            return acc + (end - start) / (1000 * 60 * 60);
+          }
+          return acc;
+        }, 0);
+
+        return {
+          id: team.id,
+          name: team.name,
+          totalHours: Math.round(teamHours),
+          tasksCompleted: teamTasks.filter(t => t.status === 'Done').length,
+          memberCount: teamUsers.length
+        };
+      });
+
+      // 4. Process Employee Stats
+      const employeeStats = users.map(u => {
+        const userTimesheets = timesheets?.filter(ts => ts.user_id === u.id) || [];
+        const userTasks = tasks?.filter(t => t.assigned_to === u.id) || [];
+        
+        const userHours = userTimesheets.reduce((acc, ts) => {
+          if (ts.clock_out) {
+            const start = new Date(ts.clock_in).getTime();
+            const end = new Date(ts.clock_out).getTime();
+            return acc + (end - start) / (1000 * 60 * 60);
+          }
+          return acc;
+        }, 0);
+
+        const teamName = teams.find(t => t.id === u.team_id)?.name || 'Unassigned';
+
+        return {
+          id: u.id,
+          name: u.full_name,
+          team: teamName,
+          teamId: u.team_id,
+          hours: Math.round(userHours * 10) / 10,
+          tasksDone: userTasks.filter(t => t.status === 'Done').length,
+          role: u.role
+        };
+      });
+
+      // 5. Daily Output (Last 7 Days)
+      const dailyOutput = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        
+        const dayTasks = tasks?.filter(t => t.status === 'Done' && t.created_at.startsWith(dateStr)).length || 0;
+        const dayTickets = tickets?.filter(t => t.status === 'Resolved' && t.created_at.startsWith(dateStr)).length || 0;
+        
+        dailyOutput.push({
+          date: dayjs(dateStr).format('MMM DD'),
+          output: dayTasks + dayTickets
+        });
+      }
+
+      res.json({
+        orgStats,
+        teamStats,
+        employeeStats,
+        dailyOutput
+      });
+    } catch (error: any) {
+      console.error("!!! EXEC ANALYTICS ERROR !!!", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get('/api/tickets', requireAuth, async (req, res) => {
     const user = (req as any).user;
     try {
